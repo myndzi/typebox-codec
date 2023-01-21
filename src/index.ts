@@ -103,7 +103,7 @@ t.traverse((schema, nodeType, path, $ref, hasChildren) => {
   const type = ($ref ? t.ref($ref) : schema)?.type;
   console.log(path, type, $ref);
 });
-t.traverseRefs((schema, nodeType, path, $ref, hasChildren) => {
+t.traverseDefs((schema, nodeType, path, $ref, hasChildren) => {
   const seenAs = t.refSources(schema);
   console.log(path, schema.type, $ref, seenAs, hasChildren);
 });

@@ -1,14 +1,11 @@
 import * as URI from 'uri-js';
 
-const escapedRegex = /~[01]/;
-const unescapeJsonPointer = (ptr: string) =>
-  ptr.replace(escapedRegex, v => (v[1] === '0' ? '~' : '/'));
+import isPlainObject from 'lodash.isplainobject';
 
-const strictVal = <T extends any>(
-  obj: any,
-  key: string,
-  type?: 'string' | 'object',
-): undefined | T => {
+const escapedRegex = /~[01]/;
+export const unescapeJsonPointer = (ptr: string) => ptr.replace(escapedRegex, v => (v[1] === '0' ? '~' : '/'));
+
+export const strictVal = <T extends any>(obj: any, key: string, type?: 'string' | 'object'): undefined | T => {
   if (typeof obj !== 'object') return undefined;
   if (!Object.prototype.hasOwnProperty.call(obj, key)) return undefined;
   const v = obj[key];
@@ -19,32 +16,25 @@ const strictVal = <T extends any>(
 export enum NodeType {
   Root, // the schema document root
   ObjectProperty, // the schema of a named property on an object
-  ObjectPatternProperty, // the schema of a pattern property on an object
+  ObjectPatternProperties, // the schema of a pattern property on an object
   ObjectAdditionalProperties, // the schema of "wildcard" properties on an object
   TupleItem, // the schema of a tuple item in an array
   ArrayItems, // the schema of non-tuple items in an array
-  Ref, // a sub-schema referenced elsewhere
 }
 
 export interface TraverseCallback {
-  (
-    schema: any,
-    nodeType: NodeType,
-    path: string,
-    ref: string | undefined,
-    hasChildren: boolean,
-  ): void;
+  (schema: any, nodeType: NodeType, path: string, ref: string | undefined, hasChildren: boolean): void;
 }
 
 export interface PathBuilder {
   (nodeType: NodeType, parentPath: string, currentKey?: string): string;
 }
 
-const defaultPathBuilder: PathBuilder = (nodeType, parentPath, currentKey) => {
+export const defaultPathBuilder: PathBuilder = (nodeType, parentPath, currentKey) => {
   switch (nodeType) {
     case NodeType.ObjectProperty:
       return `${parentPath}.${currentKey}`;
-    case NodeType.ObjectPatternProperty:
+    case NodeType.ObjectPatternProperties:
       return `${parentPath}./${currentKey}/`;
     case NodeType.ObjectAdditionalProperties:
       return `${parentPath}.*`;
@@ -52,10 +42,8 @@ const defaultPathBuilder: PathBuilder = (nodeType, parentPath, currentKey) => {
       return `${parentPath}[${currentKey}]`;
     case NodeType.ArrayItems:
       return `${parentPath}[*]`;
-    case NodeType.Ref:
     case NodeType.Root:
-      // unused, but satisfies typescript
-      return 'implementation error';
+      return `#${currentKey}`;
   }
 };
 
@@ -64,12 +52,14 @@ export class Traverser {
   private seenAs: Map<any, string[]>;
   private root: any;
   private path: PathBuilder;
+  private didTraversal: boolean;
 
   constructor(root: any, pathBuilder: PathBuilder = defaultPathBuilder) {
-    if (!root || Array.isArray(root) || typeof root !== 'object') {
-      throw new Error('Invalid schema?');
+    if (!isPlainObject(root)) {
+      throw new Error('Base schema must be a plain JavaScript object');
     }
 
+    this.didTraversal = false;
     this.refs = new Map([['#', root]]);
     this.seenAs = new Map();
     this.root = root;
@@ -103,48 +93,39 @@ export class Traverser {
     // an array, which i initially took to suggest it should return the "additionalItems"
     // in an array schema. however, json schema is more literal than that (by experimental
     // testing and more reading) - a ref is just a path through the document as written
-    const schema = jsonPointer.reduce(
-      (obj: any, key: string) => strictVal(obj, key),
-      this.root,
-    );
+    const schema = jsonPointer.reduce((obj: any, key: string) => strictVal(obj, key), this.root);
 
-    if (typeof schema === undefined) {
-      throw new Error(
-        `Invalid json-pointer (failed to look up value): ${fragment}`,
-      );
-    }
     this.refs.set(key, schema);
     return schema;
   }
 
   refSources($ref: string): string[] {
+    if (!this.didTraversal) {
+      throw new Error(`.refSources can't be called before .traverse()`);
+    }
     return this.seenAs.get($ref) ?? [];
   }
 
-  // only usable after the initial call to traverse
-  traverseRefs(cb: TraverseCallback): void {
-    for (const [key, val] of this.refs) {
-      // skip the root
-      if (key === '#') continue;
+  traverseDefs(cb: TraverseCallback): void {
+    const callDefs = (defKey: string) => {
+      const defPath = this.path(NodeType.Root, '', defKey);
 
-      this.traverse(cb, val, NodeType.Ref, key);
-    }
+      const defs = strictVal<any>(this.root, defKey, 'object');
+      if (typeof defs === 'undefined') return;
+
+      for (const [key, val] of Object.entries(defs)) {
+        this.traverse(cb, val, NodeType.ObjectProperty, this.path(NodeType.ObjectProperty, defPath, key));
+      }
+    };
+
+    callDefs('$defs');
+    callDefs('definitions');
   }
 
   // work through the schema and call the callback with what we find
   traverse(cb: TraverseCallback): void;
-  traverse(
-    cb: TraverseCallback,
-    schema: any,
-    nodeType: NodeType,
-    path: string,
-  ): void;
-  traverse(
-    cb: TraverseCallback,
-    schema: any = this.root,
-    nodeType: NodeType = NodeType.Root,
-    path: string = '',
-  ): void {
+  traverse(cb: TraverseCallback, schema: any, nodeType: NodeType, path: string): void;
+  traverse(cb: TraverseCallback, schema: any = this.root, nodeType: NodeType = NodeType.Root, path: string = ''): void {
     // json schema is actully undefined in the absence of a concrete value to apply it to,
     // as explained here: https://github.com/json-schema/json-schema/issues/172#issuecomment-114076650
     // therefore, it's not _invalid_ to be missing "type", but if it is missing, we probably
@@ -155,22 +136,10 @@ export class Traverser {
     // sane, and let the caller sort it out if they want to.
 
     const properties = strictVal<object>(schema, 'properties', 'object');
-    const patternProperties = strictVal<object>(
-      schema,
-      'patternProperties',
-      'object',
-    );
-    const additionalProperties = strictVal<object>(
-      schema,
-      'additionalProperties',
-      'object',
-    );
+    const patternProperties = strictVal<object>(schema, 'patternProperties', 'object');
+    const additionalProperties = strictVal<object>(schema, 'additionalProperties', 'object');
     const items = strictVal<object>(schema, 'items', 'object');
-    const additionalItems = strictVal<object>(
-      schema,
-      'additionalItems',
-      'object',
-    );
+    const additionalItems = strictVal<object>(schema, 'additionalItems', 'object');
     const prefixItems = strictVal<object>(schema, 'prefixItems', 'object');
 
     const hasChildren = !!(
@@ -193,20 +162,22 @@ export class Traverser {
         this.seenAs.set(refSchema, sources);
       }
     }
-    cb(schema, nodeType, path, $ref, hasChildren);
+
+    // don't call back for the initial root item call
+    if (nodeType !== NodeType.Root) {
+      cb(schema, nodeType, path, $ref, hasChildren);
+    }
 
     // object keywords...
     const callObjectEntries = (nodeType: NodeType, obj: any) => {
       if (!obj) return;
       for (const [key, val] of Object.entries(obj)) {
-        // skip over meta-values
-        if (key.startsWith('$') || key === 'definitions') continue;
         this.traverse(cb, val, nodeType, this.path(nodeType, path, key));
       }
     };
     callObjectEntries(NodeType.ObjectProperty, properties);
 
-    callObjectEntries(NodeType.ObjectPatternProperty, patternProperties);
+    callObjectEntries(NodeType.ObjectPatternProperties, patternProperties);
 
     if (additionalProperties) {
       this.traverse(
@@ -220,35 +191,28 @@ export class Traverser {
     // array keywords...
 
     // "items" as an array is an older way to define a tuple. it's now "prefixItems"
-    const tupleItems = Array.isArray(items) ? items : prefixItems;
+    const tupleItems = prefixItems && Array.isArray(prefixItems) ? prefixItems : items;
+
     // "additionalItems" is the older way to define the schema for items beyond
     // the tuple. it's now "items"
-    const restItems = additionalItems ?? items;
-    // there are other possible combinations of these three properties, but they should
-    // be invalid -- so we might "fail" to expose certain values here. we could
-    // potentially crash or issue a warning, but it seems sanest to just pick a
-    // valid intepreretation and use it
+    const restItems = items && !Array.isArray(items) ? items : additionalItems;
+
+    // other combinations are undefined (e.g. both prefixItems and restItems are arrays)
 
     if (tupleItems) {
-      if (Array.isArray(items)) {
-        for (const [key, val] of items.entries()) {
-          this.traverse(
-            val,
-            cb,
-            NodeType.TupleItem,
-            this.path(NodeType.TupleItem, path, String(key)),
-          );
+      if (Array.isArray(tupleItems)) {
+        for (const [key, val] of tupleItems.entries()) {
+          this.traverse(cb, val, NodeType.TupleItem, this.path(NodeType.TupleItem, path, String(key)));
         }
       }
     }
 
     if (restItems) {
-      this.traverse(
-        cb,
-        restItems,
-        NodeType.ArrayItems,
-        this.path(NodeType.ArrayItems, path),
-      );
+      this.traverse(cb, restItems, NodeType.ArrayItems, this.path(NodeType.ArrayItems, path));
+    }
+
+    if (nodeType === NodeType.Root) {
+      this.didTraversal = true;
     }
   }
 }

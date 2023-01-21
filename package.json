@@ -2,29 +2,51 @@
   "name": "typebox-codec",
   "version": "1.0.0",
   "description": "Experimental codecs for TypeBox",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/myndzi/typebox-codec.git"
   },
-  "author": "",
+  "author": {
+    "name": "Kris Reeves",
+    "email": "kris@pressbuttonllc.com"
+  },
   "license": "ISC",
   "bugs": {
     "url": "https://github.com/myndzi/typebox-codec/issues"
   },
   "homepage": "https://github.com/myndzi/typebox-codec#readme",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "require": "./dist/index.js",
+      "import": "./dist/index.mjs",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean",
+    "build:watch": "npm run build -- --watch src",
+    "prepublishOnly": "npm run build",
+    "test": "jest",
+    "test:watch": "npm run test -- --watch --onlyChanged --coverage"
+  },
   "peerDependencies": {
     "@sinclair/typebox": "^0.25.20"
   },
   "devDependencies": {
     "@sinclair/typebox": "^0.25.20",
+    "@types/jest": "^29.2.6",
+    "@types/lodash.isplainobject": "^4.0.7",
+    "jest": "^29.3.1",
+    "ts-jest": "^29.0.5",
     "ts-node": "^10.9.1",
+    "tsup": "^6.5.0",
     "typescript": "^4.9.4"
   },
   "dependencies": {
+    "lodash.isplainobject": "^4.0.6",
     "moment": "^2.29.4",
     "uri-js": "^4.4.1"
   }

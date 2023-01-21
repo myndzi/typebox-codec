@@ -10,7 +10,7 @@
     "lib": [],
     // "sourceMap": true,
     "esModuleInterop": true,
-    "outDir": "dist",
+    // "outDir": "dist",
     // "rootDir": "src",
 
     // "skipLibCheck": true,
@@ -27,7 +27,7 @@
     "noUncheckedIndexedAccess": true,
     // "noUnusedLocals": true,
     // "noUnusedParameters": true,
-    "strictNullChecks": true,
+    "strictNullChecks": true
   },
   "include": ["src/**/*.ts", "test/**/*.ts"],
   "exclude": ["node_modules", "types", "dist"],

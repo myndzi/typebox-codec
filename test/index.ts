@@ -54,3 +54,9 @@ console.log(CEmpty.Transform(Decode, testSchema, decoded));
 decoded = CDate.Transform(Decode, testSchema, { ts: '2023-01-16', foo: 'A' });
 console.log(decoded);
 console.log(Value.Check(testSchema, decoded));
+
+console.log(
+  Value.Check(testSchema, {
+    ts: new Date(),
+  }),
+);
