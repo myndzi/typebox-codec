@@ -83,6 +83,13 @@ describe('Traveser', () => {
     it.each(nonPlainObjects)('requires an object root', v => {
       expect(() => new Traverser(v)).toThrow(/must be a plain.*object/);
     });
+
+    it('supports custom path construction', () => {
+      const t = new Traverser(kitchenSink, () => 'ok');
+      t.traverse((_1, _2, path) => {
+        expect(path).toEqual('ok');
+      });
+    });
   });
 
   describe('#ref', () => {
