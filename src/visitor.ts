@@ -2,8 +2,14 @@ import * as URI from 'uri-js';
 
 import isPlainObject from 'lodash.isplainobject';
 
-const escapedRegex = /~[01]/;
+const escapedRegex = /~[01]/g;
 export const unescapeJsonPointer = (ptr: string) => ptr.replace(escapedRegex, v => (v[1] === '0' ? '~' : '/'));
+
+const unescapedRegex = /[~/]/g;
+export const escapeJsonPointer = (ptr: string) => ptr.replace(unescapedRegex, v => (v === '~' ? '~0' : '~1'));
+
+export const jsonPathJoin = (escaped: string, ...unescaped: string[]): string =>
+  [escaped, ...unescaped.map(escapeJsonPointer)].join('/');
 
 export const strictVal = <T extends any>(obj: any, key: string, type?: 'string' | 'object'): undefined | T => {
   if (typeof obj !== 'object') return undefined;
@@ -23,14 +29,21 @@ export enum NodeType {
 }
 
 export interface VisitorCallback {
-  (schema: any, nodeType: NodeType, path: string, ref: string | undefined, hasChildren: boolean): void;
+  (args: {
+    schema: any;
+    nodeType: NodeType;
+    jsonPath: string;
+    dataPath: string;
+    $ref: string | undefined;
+    hasChildren: boolean;
+  }): void;
 }
 
 export interface PathBuilder {
   (nodeType: NodeType, parentPath: string, currentKey?: string): string;
 }
 
-export const defaultPathBuilder: PathBuilder = (nodeType, parentPath, currentKey) => {
+export const dataPathBuilder: PathBuilder = (nodeType, parentPath, currentKey) => {
   switch (nodeType) {
     case NodeType.ObjectProperty:
       return `${parentPath}.${currentKey}`;
@@ -43,7 +56,7 @@ export const defaultPathBuilder: PathBuilder = (nodeType, parentPath, currentKey
     case NodeType.ArrayItems:
       return `${parentPath}[*]`;
     case NodeType.Root:
-      return `#${currentKey}`;
+      return '';
   }
 };
 
@@ -54,7 +67,7 @@ export class Visitor {
   private path: PathBuilder;
   private didTraversal: boolean;
 
-  constructor(root: any, pathBuilder: PathBuilder = defaultPathBuilder) {
+  constructor(root: any, pathBuilder: PathBuilder = dataPathBuilder) {
     if (!isPlainObject(root)) {
       throw new Error('Base schema must be a plain JavaScript object');
     }
@@ -114,7 +127,13 @@ export class Visitor {
       if (typeof defs === 'undefined') return;
 
       for (const [key, val] of Object.entries(defs)) {
-        this.visit(cb, val, NodeType.ObjectProperty, this.path(NodeType.ObjectProperty, defPath, key));
+        this._visit(
+          cb,
+          val,
+          NodeType.ObjectProperty,
+          this.path(NodeType.ObjectProperty, defPath, key),
+          `#/${defKey}/${key}`,
+        );
       }
     };
 
@@ -123,9 +142,11 @@ export class Visitor {
   }
 
   // work through the schema and call the callback with what we find
-  visit(cb: VisitorCallback): void;
-  visit(cb: VisitorCallback, schema: any, nodeType: NodeType, path: string): void;
-  visit(cb: VisitorCallback, schema: any = this.root, nodeType: NodeType = NodeType.Root, path: string = ''): void {
+  visit(cb: VisitorCallback): void {
+    this._visit(cb, this.root, NodeType.Root, this.path(NodeType.Root, '', ''), '#');
+  }
+
+  private _visit(cb: VisitorCallback, schema: any, nodeType: NodeType, dataPath: string, jsonPath: string): void {
     // json schema is actully undefined in the absence of a concrete value to apply it to,
     // as explained here: https://github.com/json-schema/json-schema/issues/172#issuecomment-114076650
     // therefore, it's not _invalid_ to be missing "type", but if it is missing, we probably
@@ -158,57 +179,77 @@ export class Visitor {
         // track the locations where we see refs; a schema can point into
         // the existing schema
         const sources = this.seenAs.get(refSchema) ?? [];
-        sources.push(path);
+        sources.push(dataPath);
         this.seenAs.set(refSchema, sources);
       }
     }
 
     // don't call back for the initial root item call
     if (nodeType !== NodeType.Root) {
-      cb(schema, nodeType, path, $ref, hasChildren);
+      cb({ schema, nodeType, dataPath, jsonPath, $ref, hasChildren });
     }
 
     // object keywords...
-    const callObjectEntries = (nodeType: NodeType, obj: any) => {
+    const callObjectEntries = (nodeType: NodeType, obj: any, propName: string) => {
       if (!obj) return;
-      for (const [key, val] of Object.entries(obj)) {
-        this.visit(cb, val, nodeType, this.path(nodeType, path, key));
+      for (const [_key, val] of Object.entries(obj)) {
+        const key = unescapeJsonPointer(_key);
+        this._visit(cb, val, nodeType, this.path(nodeType, dataPath, key), jsonPathJoin(jsonPath, propName, key));
       }
     };
-    callObjectEntries(NodeType.ObjectProperty, properties);
-
-    callObjectEntries(NodeType.ObjectPatternProperties, patternProperties);
+    callObjectEntries(NodeType.ObjectProperty, properties, 'properties');
+    callObjectEntries(NodeType.ObjectPatternProperties, patternProperties, 'patternProperties');
 
     if (additionalProperties) {
-      this.visit(
+      this._visit(
         cb,
         additionalProperties,
         NodeType.ObjectAdditionalProperties,
-        this.path(NodeType.ObjectAdditionalProperties, path),
+        this.path(NodeType.ObjectAdditionalProperties, dataPath),
+        jsonPathJoin(jsonPath, 'additionalProperties'),
       );
     }
 
     // array keywords...
 
+    const callTupleEntries = (tupleItems: any[], propKey: string) => {
+      for (const [key, val] of tupleItems.entries()) {
+        const strKey = String(key);
+        this._visit(
+          cb,
+          val,
+          NodeType.TupleItem,
+          this.path(NodeType.TupleItem, dataPath, strKey),
+          jsonPathJoin(jsonPath, propKey, strKey),
+        );
+      }
+    };
+
     // "items" as an array is an older way to define a tuple. it's now "prefixItems"
-    const tupleItems = prefixItems && Array.isArray(prefixItems) ? prefixItems : items;
+    if (prefixItems && Array.isArray(prefixItems)) {
+      callTupleEntries(prefixItems, 'prefixItems');
+    } else if (items && Array.isArray(items)) {
+      callTupleEntries(items, 'items');
+    }
 
     // "additionalItems" is the older way to define the schema for items beyond
     // the tuple. it's now "items"
-    const restItems = items && !Array.isArray(items) ? items : additionalItems;
-
-    // other combinations are undefined (e.g. both prefixItems and restItems are arrays)
-
-    if (tupleItems) {
-      if (Array.isArray(tupleItems)) {
-        for (const [key, val] of tupleItems.entries()) {
-          this.visit(cb, val, NodeType.TupleItem, this.path(NodeType.TupleItem, path, String(key)));
-        }
-      }
-    }
-
-    if (restItems) {
-      this.visit(cb, restItems, NodeType.ArrayItems, this.path(NodeType.ArrayItems, path));
+    if (items && !Array.isArray(items)) {
+      this._visit(
+        cb,
+        items,
+        NodeType.ArrayItems,
+        this.path(NodeType.ArrayItems, dataPath),
+        jsonPathJoin(jsonPath, 'items'),
+      );
+    } else if (additionalItems && !Array.isArray(additionalItems)) {
+      this._visit(
+        cb,
+        additionalItems,
+        NodeType.ArrayItems,
+        this.path(NodeType.ArrayItems, dataPath),
+        jsonPathJoin(jsonPath, 'additionalItems'),
+      );
     }
 
     if (nodeType === NodeType.Root) {

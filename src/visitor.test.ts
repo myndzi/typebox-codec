@@ -1,8 +1,14 @@
-import { defaultPathBuilder, NodeType, strictVal, Visitor, unescapeJsonPointer } from './visitor';
+import {
+  dataPathBuilder,
+  NodeType,
+  strictVal,
+  Visitor,
+  unescapeJsonPointer,
+  VisitorCallback,
+  escapeJsonPointer,
+} from './visitor';
 
-import { kitchenSink, ksExpectations } from '../fixtures/kitchensink';
-
-type cbArgs = [any, NodeType, string, string | undefined, boolean];
+import { expectation, kitchenSink, ksExpectations } from '../fixtures/kitchensink';
 
 export default {};
 
@@ -40,25 +46,42 @@ describe('defaultPathBuilder', () => {
     ['ObjectAdditionalProperties', '', '', '.*'],
     ['TupleItem', '', '1', '[1]'],
     ['ArrayItems', '', '', '[*]'],
-    ['Root', '', 'foo', '#foo'],
+    ['Root', '', '', ''],
   ];
   it.each(testCases)('maps %1$s -> %3$s', (nodeType, parentPath, currentKey, expected) => {
-    const composed = defaultPathBuilder(NodeType[nodeType], parentPath, currentKey);
+    const composed = dataPathBuilder(NodeType[nodeType], parentPath, currentKey);
     expect(composed).toEqual(expected);
   });
 });
 
 describe('unescapeJsonPointer', () => {
+  // prettier-ignore
   const testCases: [string, string][] = [
-    ['foo', 'foo'],
-    ['f~0o', 'f~o'],
-    ['f~01o', 'f~1o'],
-    ['f~1o', 'f/o'],
-    ['f~11o', 'f/1o'],
-    ['f~22o', 'f~22o'],
+    ['foo'    , 'foo'  ],
+    ['f~0o'   , 'f~o'  ],
+    ['f~01o'  , 'f~1o' ],
+    ['f~1o'   , 'f/o'  ],
+    ['f~11o'  , 'f/1o' ],
+    ['f~22o'  , 'f~22o'],
+    ['f~0o~1o', 'f~o/o'],
   ];
   it.each(testCases)('%s -> %s', (escaped, unescaped) => {
     expect(unescapeJsonPointer(escaped)).toBe(unescaped);
+  });
+});
+
+describe('escapeJsonPointer', () => {
+  // prettier-ignore
+  const testCases: [string, string][] = [
+    ['foo'  , 'foo'    ],
+    ['f~o'  , 'f~0o'   ],
+    ['f~1o' , 'f~01o'  ],
+    ['f/o'  , 'f~1o'   ],
+    ['f/1o' , 'f~11o'  ],
+    ['f~o/o', 'f~0o~1o'],
+  ];
+  it.each(testCases)('%s -> %s', (unescaped, escaped) => {
+    expect(escapeJsonPointer(unescaped)).toBe(escaped);
   });
 });
 
@@ -77,7 +100,7 @@ describe('strictVal', () => {
     expect(strictVal(obj, key, type)).toEqual(expected);
   });
 });
-describe('Traveser', () => {
+describe('Visitor', () => {
   describe('constructor', () => {
     const nonPlainObjects = [new Date(), null, undefined, 1, 1n, 'foo', []];
     it.each(nonPlainObjects)('requires an object root', v => {
@@ -86,8 +109,8 @@ describe('Traveser', () => {
 
     it('supports custom path construction', () => {
       const t = new Visitor(kitchenSink, () => 'ok');
-      t.visit((_1, _2, path) => {
-        expect(path).toEqual('ok');
+      t.visit(({ dataPath }) => {
+        expect(dataPath).toEqual('ok');
       });
     });
   });
@@ -128,54 +151,67 @@ describe('Traveser', () => {
     });
   });
 
-  describe('traverseDefs', () => {
-    it.each(['$defs', 'definitions'])('traverses %s', key => {
+  describe('visitDefs', () => {
+    it.each(['$defs', 'definitions'])('visits %s', key => {
       const schema = {
         [key]: {
           foo: { type: 'string' },
           bar: { type: 'object', properties: { baz: { type: 'string' } } },
         },
       };
-      const t = new Visitor(schema);
 
       const schemaVal = schema[key];
       if (!schemaVal) throw new Error('wat');
 
-      const received: cbArgs[] = [];
-      const expected: cbArgs[] = [
-        [schemaVal.foo, NodeType.ObjectProperty, `#${key}.foo`, undefined, false],
-        [schemaVal.bar, NodeType.ObjectProperty, `#${key}.bar`, undefined, true],
-        [schemaVal.bar.properties.baz, NodeType.ObjectProperty, `#${key}.bar.baz`, undefined, false],
-      ];
-      t.visitDefs((sch, nt, path, ref, hasChildren) => {
-        received.push([sch, nt, path, ref, hasChildren]);
+      const t = new Visitor(schema);
+
+      // prettier-ignore
+      const unresolved: Map<string, expectation> = new Map([
+        ['.foo',     [`#/${key}/foo`,                schemaVal.foo,                NodeType.ObjectProperty, undefined, false]],
+        ['.bar',     [`#/${key}/bar`,                schemaVal.bar,                NodeType.ObjectProperty, undefined, true ]],
+        ['.bar.baz', [`#/${key}/bar/properties/baz`, schemaVal.bar.properties.baz, NodeType.ObjectProperty, undefined, false]],
+      ]);
+
+      t.visitDefs(({ schema, nodeType, dataPath, jsonPath, $ref, hasChildren }) => {
+        const exp = unresolved.get(dataPath);
+        if (!exp) {
+          throw new Error(`visit encountered an unexpected path: ${dataPath}`);
+        }
+        expect(jsonPath).toBe(exp[0]);
+        expect(schema).toBeCorrectSchema(exp[1], dataPath);
+        expect(NodeType[nodeType]).toBe(NodeType[exp[2]]);
+        expect($ref).toBe(exp[3]);
+        expect(hasChildren).toBe(exp[4]);
+
+        unresolved.delete(dataPath);
       });
-      expect(received).toEqual(expected);
+      expect([...unresolved.keys()]).toEqual([]);
     });
   });
 
-  describe('traverse', () => {
+  describe('visit', () => {
     it('handles object properties', () => {
       const t = new Visitor(kitchenSink);
       const unresolved = new Map(ksExpectations);
-      t.visit((sch, nt, path, ref, hasChildren) => {
-        const exp = unresolved.get(path);
+      t.visit(({ schema, nodeType, dataPath, jsonPath, $ref, hasChildren }) => {
+        const exp = unresolved.get(dataPath);
         if (!exp) {
-          throw new Error(`traverse encountered an unexpected path: ${path}`);
+          throw new Error(`visit encountered an unexpected path: ${dataPath}`);
         }
-        expect(sch).toBeCorrectSchema(exp[0], path);
-        expect(NodeType[nt]).toBe(NodeType[exp[1]]);
-        expect(ref).toBe(exp[2]);
-        expect(hasChildren).toBe(exp[3]);
+        expect(jsonPath).toBe(exp[0]);
+        expect(schema).toBeCorrectSchema(exp[1], dataPath);
+        expect(NodeType[nodeType]).toBe(NodeType[exp[2]]);
+        expect($ref).toBe(exp[3]);
+        expect(hasChildren).toBe(exp[4]);
 
-        unresolved.delete(path);
+        unresolved.delete(dataPath);
       });
       expect([...unresolved.keys()]).toEqual([]);
     });
   });
 
   describe('refSources', () => {
-    it(`throws if traverse hasn't been called`, () => {
+    it(`throws if visit hasn't been called`, () => {
       const t = new Visitor({});
       expect(() => t.refSources('foo')).toThrow(/can't be called before/);
     });
