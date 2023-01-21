@@ -1,7 +1,7 @@
 import { TSchema, Type } from '@sinclair/typebox';
 import { Codec } from './codec';
 import { AnyToStatic, StaticToAny, Transformer } from './transformer';
-import { Traverser, NodeType } from './traverse';
+import { Visitor, NodeType } from './visitor';
 import { Apply, isObject, Transform } from './util';
 
 export { Codec } from './codec';
@@ -11,15 +11,9 @@ export { Apply, Transform } from './util';
 const XEncode = new Transformer('Encode');
 const XDecode = new Transformer('Decode');
 
-export const Encode = <T extends any>(
-  transformer: Transformer,
-  fn: StaticToAny<T>,
-) => Transform(All, transformer, fn);
+export const Encode = <T extends any>(transformer: Transformer, fn: StaticToAny<T>) => Transform(All, transformer, fn);
 
-export const Decode = <T extends any>(
-  transformer: Transformer,
-  fn: AnyToStatic<T>,
-) => Transform(All, transformer, fn);
+export const Decode = <T extends any>(transformer: Transformer, fn: AnyToStatic<T>) => Transform(All, transformer, fn);
 
 export const All = new Codec('All', XEncode, XDecode);
 
@@ -27,14 +21,10 @@ export const CreateCodec = (name: string) => {
   const codec = new Codec(name, All);
 
   type EncodeOverload = {
-    <T extends any>(fn: StaticToAny<T>): ReturnType<
-      typeof Transform<StaticToAny<T>>
-    >;
+    <T extends any>(fn: StaticToAny<T>): ReturnType<typeof Transform<StaticToAny<T>>>;
     (schema: TSchema, value: any): any;
   };
-  const Encode: EncodeOverload = <T extends any>(
-    ...args: [StaticToAny<T>] | [TSchema, any]
-  ): any => {
+  const Encode: EncodeOverload = <T extends any>(...args: [StaticToAny<T>] | [TSchema, any]): any => {
     if (args.length === 1) {
       return Transform(codec, XEncode, args[0]);
     } else {
@@ -43,14 +33,10 @@ export const CreateCodec = (name: string) => {
   };
 
   type DecodeOverload = {
-    <T extends any>(fn: AnyToStatic<T>): ReturnType<
-      typeof Transform<AnyToStatic<T>>
-    >;
+    <T extends any>(fn: AnyToStatic<T>): ReturnType<typeof Transform<AnyToStatic<T>>>;
     (schema: TSchema, value: any): any;
   };
-  const Decode: DecodeOverload = <T extends any>(
-    ...args: [AnyToStatic<T>] | [TSchema, any]
-  ): any => {
+  const Decode: DecodeOverload = <T extends any>(...args: [AnyToStatic<T>] | [TSchema, any]): any => {
     if (args.length === 1) {
       return Transform(codec, XDecode, args[0]);
     } else {
@@ -97,13 +83,13 @@ const testSchema = Type.Object(
 
 import { inspect } from 'node:util';
 // console.log(inspect(testSchema, { depth: null }));
-const t = new Traverser(testSchema);
-t.traverse((schema, nodeType, path, $ref, hasChildren) => {
+const t = new Visitor(testSchema);
+t.visit((schema, nodeType, path, $ref, hasChildren) => {
   if (hasChildren) return;
   const type = ($ref ? t.ref($ref) : schema)?.type;
   console.log(path, type, $ref);
 });
-t.traverseDefs((schema, nodeType, path, $ref, hasChildren) => {
+t.visitDefs((schema, nodeType, path, $ref, hasChildren) => {
   const seenAs = t.refSources(schema);
   console.log(path, schema.type, $ref, seenAs, hasChildren);
 });

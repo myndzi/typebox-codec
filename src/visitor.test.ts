@@ -1,4 +1,4 @@
-import { defaultPathBuilder, NodeType, strictVal, Traverser, unescapeJsonPointer } from './traverse';
+import { defaultPathBuilder, NodeType, strictVal, Visitor, unescapeJsonPointer } from './visitor';
 
 import { kitchenSink, ksExpectations } from '../fixtures/kitchensink';
 
@@ -81,12 +81,12 @@ describe('Traveser', () => {
   describe('constructor', () => {
     const nonPlainObjects = [new Date(), null, undefined, 1, 1n, 'foo', []];
     it.each(nonPlainObjects)('requires an object root', v => {
-      expect(() => new Traverser(v)).toThrow(/must be a plain.*object/);
+      expect(() => new Visitor(v)).toThrow(/must be a plain.*object/);
     });
 
     it('supports custom path construction', () => {
-      const t = new Traverser(kitchenSink, () => 'ok');
-      t.traverse((_1, _2, path) => {
+      const t = new Visitor(kitchenSink, () => 'ok');
+      t.visit((_1, _2, path) => {
         expect(path).toEqual('ok');
       });
     });
@@ -95,7 +95,7 @@ describe('Traveser', () => {
   describe('#ref', () => {
     const externalPaths = ['/foo', 'https://example.com#bar'];
     it.each(externalPaths)(`fails on external references (%s)`, path => {
-      const t = new Traverser({});
+      const t = new Visitor({});
       expect(() => t.ref(path)).toThrow(/not supported/);
     });
 
@@ -107,13 +107,13 @@ describe('Traveser', () => {
       ['undefined value', {}, '#/foo', undefined],
     ];
     it.each(testCases)('looks up ref (%s)', (_, schema, path, expected) => {
-      const t = new Traverser(schema);
+      const t = new Visitor(schema);
       expect(t.ref(path)).toBe(expected);
     });
 
     it('memoizes ref lookups', () => {
       const schema = { foo: 'bar' };
-      const t = new Traverser(schema);
+      const t = new Visitor(schema);
       expect(t.ref('#/foo')).toBe('bar');
       schema.foo = 'baz';
       expect(t.ref('#/foo')).toBe('bar');
@@ -121,7 +121,7 @@ describe('Traveser', () => {
 
     it('normalizes ref lookups', () => {
       const schema = { foo: 'bar' };
-      const t = new Traverser(schema);
+      const t = new Visitor(schema);
       expect(t.ref('#/foo')).toBe('bar');
       schema.foo = 'baz';
       expect(t.ref('#/f%6fo')).toBe('bar');
@@ -136,7 +136,7 @@ describe('Traveser', () => {
           bar: { type: 'object', properties: { baz: { type: 'string' } } },
         },
       };
-      const t = new Traverser(schema);
+      const t = new Visitor(schema);
 
       const schemaVal = schema[key];
       if (!schemaVal) throw new Error('wat');
@@ -147,7 +147,7 @@ describe('Traveser', () => {
         [schemaVal.bar, NodeType.ObjectProperty, `#${key}.bar`, undefined, true],
         [schemaVal.bar.properties.baz, NodeType.ObjectProperty, `#${key}.bar.baz`, undefined, false],
       ];
-      t.traverseDefs((sch, nt, path, ref, hasChildren) => {
+      t.visitDefs((sch, nt, path, ref, hasChildren) => {
         received.push([sch, nt, path, ref, hasChildren]);
       });
       expect(received).toEqual(expected);
@@ -156,9 +156,9 @@ describe('Traveser', () => {
 
   describe('traverse', () => {
     it('handles object properties', () => {
-      const t = new Traverser(kitchenSink);
+      const t = new Visitor(kitchenSink);
       const unresolved = new Map(ksExpectations);
-      t.traverse((sch, nt, path, ref, hasChildren) => {
+      t.visit((sch, nt, path, ref, hasChildren) => {
         const exp = unresolved.get(path);
         if (!exp) {
           throw new Error(`traverse encountered an unexpected path: ${path}`);
@@ -176,7 +176,7 @@ describe('Traveser', () => {
 
   describe('refSources', () => {
     it(`throws if traverse hasn't been called`, () => {
-      const t = new Traverser({});
+      const t = new Visitor({});
       expect(() => t.refSources('foo')).toThrow(/can't be called before/);
     });
 
@@ -186,8 +186,8 @@ describe('Traveser', () => {
       [{}, []],
     ];
     it.each(testCases)('returns ref sources for %s', (obj, expected) => {
-      const t = new Traverser(kitchenSink);
-      t.traverse(() => {});
+      const t = new Visitor(kitchenSink);
+      t.visit(() => {});
       expect(t.refSources(obj)).toEqual(expected);
     });
   });

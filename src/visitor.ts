@@ -22,7 +22,7 @@ export enum NodeType {
   ArrayItems, // the schema of non-tuple items in an array
 }
 
-export interface TraverseCallback {
+export interface VisitorCallback {
   (schema: any, nodeType: NodeType, path: string, ref: string | undefined, hasChildren: boolean): void;
 }
 
@@ -47,7 +47,7 @@ export const defaultPathBuilder: PathBuilder = (nodeType, parentPath, currentKey
   }
 };
 
-export class Traverser {
+export class Visitor {
   private refs: Map<string, any>;
   private seenAs: Map<any, string[]>;
   private root: any;
@@ -101,12 +101,12 @@ export class Traverser {
 
   refSources($ref: string): string[] {
     if (!this.didTraversal) {
-      throw new Error(`.refSources can't be called before .traverse()`);
+      throw new Error(`.refSources can't be called before .visit()`);
     }
     return this.seenAs.get($ref) ?? [];
   }
 
-  traverseDefs(cb: TraverseCallback): void {
+  visitDefs(cb: VisitorCallback): void {
     const callDefs = (defKey: string) => {
       const defPath = this.path(NodeType.Root, '', defKey);
 
@@ -114,7 +114,7 @@ export class Traverser {
       if (typeof defs === 'undefined') return;
 
       for (const [key, val] of Object.entries(defs)) {
-        this.traverse(cb, val, NodeType.ObjectProperty, this.path(NodeType.ObjectProperty, defPath, key));
+        this.visit(cb, val, NodeType.ObjectProperty, this.path(NodeType.ObjectProperty, defPath, key));
       }
     };
 
@@ -123,9 +123,9 @@ export class Traverser {
   }
 
   // work through the schema and call the callback with what we find
-  traverse(cb: TraverseCallback): void;
-  traverse(cb: TraverseCallback, schema: any, nodeType: NodeType, path: string): void;
-  traverse(cb: TraverseCallback, schema: any = this.root, nodeType: NodeType = NodeType.Root, path: string = ''): void {
+  visit(cb: VisitorCallback): void;
+  visit(cb: VisitorCallback, schema: any, nodeType: NodeType, path: string): void;
+  visit(cb: VisitorCallback, schema: any = this.root, nodeType: NodeType = NodeType.Root, path: string = ''): void {
     // json schema is actully undefined in the absence of a concrete value to apply it to,
     // as explained here: https://github.com/json-schema/json-schema/issues/172#issuecomment-114076650
     // therefore, it's not _invalid_ to be missing "type", but if it is missing, we probably
@@ -172,7 +172,7 @@ export class Traverser {
     const callObjectEntries = (nodeType: NodeType, obj: any) => {
       if (!obj) return;
       for (const [key, val] of Object.entries(obj)) {
-        this.traverse(cb, val, nodeType, this.path(nodeType, path, key));
+        this.visit(cb, val, nodeType, this.path(nodeType, path, key));
       }
     };
     callObjectEntries(NodeType.ObjectProperty, properties);
@@ -180,7 +180,7 @@ export class Traverser {
     callObjectEntries(NodeType.ObjectPatternProperties, patternProperties);
 
     if (additionalProperties) {
-      this.traverse(
+      this.visit(
         cb,
         additionalProperties,
         NodeType.ObjectAdditionalProperties,
@@ -202,13 +202,13 @@ export class Traverser {
     if (tupleItems) {
       if (Array.isArray(tupleItems)) {
         for (const [key, val] of tupleItems.entries()) {
-          this.traverse(cb, val, NodeType.TupleItem, this.path(NodeType.TupleItem, path, String(key)));
+          this.visit(cb, val, NodeType.TupleItem, this.path(NodeType.TupleItem, path, String(key)));
         }
       }
     }
 
     if (restItems) {
-      this.traverse(cb, restItems, NodeType.ArrayItems, this.path(NodeType.ArrayItems, path));
+      this.visit(cb, restItems, NodeType.ArrayItems, this.path(NodeType.ArrayItems, path));
     }
 
     if (nodeType === NodeType.Root) {

@@ -1,4 +1,4 @@
-import { NodeType } from '../src/traverse';
+import { NodeType } from '../src/visitor';
 
 const str = { type: 'string' };
 const num = { type: 'number' };
