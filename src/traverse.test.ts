@@ -166,4 +166,22 @@ describe('Traveser', () => {
       expect([...unresolved.keys()]).toEqual([]);
     });
   });
+
+  describe('refSources', () => {
+    it(`throws if traverse hasn't been called`, () => {
+      const t = new Traverser({});
+      expect(() => t.refSources('foo')).toThrow(/can't be called before/);
+    });
+
+    const testCases: [any, string[]][] = [
+      [kitchenSink.$defs.foo, ['.refStr']],
+      [kitchenSink.$defs.bar, ['.refObj']],
+      [{}, []],
+    ];
+    it.each(testCases)('returns ref sources for %s', (obj, expected) => {
+      const t = new Traverser(kitchenSink);
+      t.traverse(() => {});
+      expect(t.refSources(obj)).toEqual(expected);
+    });
+  });
 });

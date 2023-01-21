@@ -19,6 +19,8 @@ export const kitchenSink = {
     newTuple: newTuple([str, num], bool),
     oldTupleNoExtra: oldTuple([str], false),
     newTupleNoExtra: newTuple([str], false),
+    refStr: { $ref: '#/$defs/foo' },
+    refObj: { $ref: '#/$defs/bar' },
   },
   patternProperties: {
     '^_pat.*': str,
@@ -38,6 +40,8 @@ export const ksExpectations: Map<string, expectation> = new Map([
   ['.num', [num, NodeType.ObjectProperty, undefined, false]],
   ['./^_pat.*/', [str, NodeType.ObjectPatternProperties, undefined, false]],
   ['.*', [num, NodeType.ObjectAdditionalProperties, undefined, false]],
+  ['.refStr', [ks.refStr, NodeType.ObjectProperty, '#/$defs/foo', false]],
+  ['.refObj', [ks.refObj, NodeType.ObjectProperty, '#/$defs/bar', false]],
   ['.child', [ks.child, NodeType.ObjectProperty, undefined, true]],
   ['.child.str', [str, NodeType.ObjectProperty, undefined, false]],
   ['.child.num', [num, NodeType.ObjectProperty, undefined, false]],
