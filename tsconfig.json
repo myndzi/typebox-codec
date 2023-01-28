@@ -27,7 +27,8 @@
     "noUncheckedIndexedAccess": true,
     // "noUnusedLocals": true,
     // "noUnusedParameters": true,
-    "strictNullChecks": true
+    "strictNullChecks": true,
+    "noErrorTruncation": true
   },
   "include": ["src/**/*.ts", "test/**/*.ts"],
   "exclude": ["node_modules", "types", "dist"],

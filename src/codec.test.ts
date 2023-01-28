@@ -67,9 +67,7 @@ describe('Codec', () => {
         Type.String(),
         Transform(C_Test, T_Test, () => 'ok'),
       );
-      expect(() => C_Test.Transform(T_Other, schema, 'fail')).toThrow(
-        /Cannot find the transformer/,
-      );
+      expect(() => C_Test.Transform(T_Other, schema, 'fail')).toThrow(/Cannot find the transformer/);
     });
   });
 
@@ -162,9 +160,7 @@ describe('Codec', () => {
           Transform(C_Test, T_Test, () => 'ok'),
         ),
       });
-      expect(() =>
-        C_Test.Transform(T_Other, schema, { string: 'fail' }),
-      ).toThrow(/Cannot find the transformer/);
+      expect(() => C_Test.Transform(T_Other, schema, { string: 'fail' })).toThrow(/Cannot find the transformer/);
     });
 
     it(`fails when the structure of the data doesn't match the expected structure from the schema`, () => {
@@ -176,9 +172,7 @@ describe('Codec', () => {
           Transform(C_Test, T_Test, () => 'ok'),
         ),
       });
-      expect(() => C_Test.Transform(T_Test, schema, 'fail')).toThrow(
-        /not an object/,
-      );
+      expect(() => C_Test.Transform(T_Test, schema, 'fail')).toThrow(/not an object/);
     });
   });
 
@@ -257,9 +251,7 @@ describe('Codec', () => {
           Transform(C_Test, T_Test, () => 'ok'),
         ),
       );
-      expect(() => C_Test.Transform(T_Other, schema, ['fail'])).toThrow(
-        /Cannot find the transformer/,
-      );
+      expect(() => C_Test.Transform(T_Other, schema, ['fail'])).toThrow(/Cannot find the transformer/);
     });
 
     it(`fails when the structure of the data doesn't match the expected structure from the schema`, () => {
@@ -271,9 +263,7 @@ describe('Codec', () => {
           Transform(C_Test, T_Test, () => 'ok'),
         ),
       );
-      expect(() => C_Test.Transform(T_Test, schema, 'fail')).toThrow(
-        /not an array/,
-      );
+      expect(() => C_Test.Transform(T_Test, schema, 'fail')).toThrow(/not an array/);
     });
   });
 
@@ -408,9 +398,7 @@ describe('Codec', () => {
         },
         { $defs },
       );
-      expect(() =>
-        C_Test.Transform(T_Other, schema, { string: 'fail' }),
-      ).toThrow(/Cannot find the transformer/);
+      expect(() => C_Test.Transform(T_Other, schema, { string: 'fail' })).toThrow(/Cannot find the transformer/);
     });
   });
 });

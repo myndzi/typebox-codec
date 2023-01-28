@@ -1,7 +1,7 @@
 import { TSchema, Type } from '@sinclair/typebox';
 import { Codec } from './codec';
 import { AnyToStatic, StaticToAny, Transformer } from './transformer';
-import { Visitor, NodeType } from './visitor';
+import { Visitor } from './visitor';
 import { Apply, isObject, Transform } from './util';
 
 export { Codec } from './codec';
@@ -80,51 +80,3 @@ const testSchema = Type.Object(
   },
   { $defs },
 );
-
-import { inspect } from 'node:util';
-// console.log(inspect(testSchema, { depth: null }));
-const t = new Visitor(testSchema);
-t.visit((schema, nodeType, path, $ref, hasChildren) => {
-  if (hasChildren) return;
-  const type = ($ref ? t.ref($ref) : schema)?.type;
-  console.log(path, type, $ref);
-});
-t.visitDefs((schema, nodeType, path, $ref, hasChildren) => {
-  const seenAs = t.refSources(schema);
-  console.log(path, schema.type, $ref, seenAs, hasChildren);
-});
-
-// console.log(
-//   inspect(
-//     Type.Object({
-//       tuple: Type.Tuple([Type.String(), Type.Number()]),
-//       array: Type.Array(Type.String()),
-//       object: Type.Object({}),
-//       record: Type.Record(Type.Number(), Type.Boolean()),
-//     }),
-//     { depth: null },
-//   ),
-// );
-
-// var encoded = encode(testSchema, { ts: new Date(), foo: Foo.A });
-// console.log(encoded);
-// var decoded = decode(testSchema, encoded);
-// console.log(decoded);
-
-// const xflatten = new Transformer('flatten', true);
-// const describe = new Codec('describe', xflatten);
-// const flatten = Transform<StaticToAny<[string, string]>>(describe, xflatten, (v: any, p) => {
-//   if (isObject(v)) {
-//     return Object.entries(([k, v]) => [
-//       []
-//     ]);
-//   }
-//   return Object.entries(v)
-// });
-// const test = Annotate(
-//   Type.Object({
-//     name: Type.String(),
-//     props: Apply()
-//   }),
-//   transform(describe, flatten, (v: any) => Object.entries(v).map(([k, v]) => Array.isArray(v) ? [] : [k,v]));
-// )

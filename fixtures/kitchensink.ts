@@ -1,4 +1,4 @@
-import { NodeType } from '../src/visitor';
+import { NodeType } from '../src/schemareader';
 
 const str = { type: 'string' };
 const num = { type: 'number' };
@@ -15,6 +15,7 @@ export const kitchenSink = {
     str,
     num,
     child: obj({ str, num }),
+    notTuple: { items: str },
     oldTuple: oldTuple([str, num], bool),
     newTuple: newTuple([str, num], bool),
     oldTupleNoExtra: oldTuple([str], false),
@@ -35,31 +36,35 @@ export const kitchenSink = {
 };
 
 const ks = kitchenSink.properties as any;
+const $defs = kitchenSink.$defs as any;
 
-export type expectation = [string, any, NodeType, string | undefined, boolean];
+// export type expectation = [string, any, NodeType, string | undefined];
+export type expectation = [NodeType, any, string | undefined, string | undefined, string | undefined];
 // prettier-ignore
 export const ksExpectations: Map<string, expectation> = new Map([
-  ['.str',                ['#/properties/str',                           str,                NodeType.ObjectProperty,             undefined,     false ]],
-  ['.num',                ['#/properties/num',                           num,                NodeType.ObjectProperty,             undefined,     false ]],
-  ['./^_pat.*/',          ['#/patternProperties/^_pat.*',                str,                NodeType.ObjectPatternProperties,    undefined,     false ]],
-  ['./foo/bar/',          ['#/patternProperties/foo~1bar',               str,                NodeType.ObjectPatternProperties,    undefined,     false ]],
-  ['.*',                  ['#/additionalProperties',                     num,                NodeType.ObjectAdditionalProperties, undefined,     false ]],
-  ['.refStr',             ['#/properties/refStr',                        ks.refStr,          NodeType.ObjectProperty,             '#/$defs/foo', false ]],
-  ['.refObj',             ['#/properties/refObj',                        ks.refObj,          NodeType.ObjectProperty,             '#/$defs/bar', false ]],
-  ['.foo/bar~baz',        ['#/properties/foo~1bar~0baz',                 str,                NodeType.ObjectProperty,             undefined,     false ]],
-  ['.child',              ['#/properties/child',                         ks.child,           NodeType.ObjectProperty,             undefined,     true  ]],
-  ['.child.str',          ['#/properties/child/properties/str',          str,                NodeType.ObjectProperty,             undefined,     false ]],
-  ['.child.num',          ['#/properties/child/properties/num',          num,                NodeType.ObjectProperty,             undefined,     false ]],
-  ['.oldTuple',           ['#/properties/oldTuple',                      ks.oldTuple,        NodeType.ObjectProperty,             undefined,     true  ]],
-  ['.oldTuple[0]',        ['#/properties/oldTuple/items/0',              str,                NodeType.TupleItem,                  undefined,     false ]],
-  ['.oldTuple[1]',        ['#/properties/oldTuple/items/1',              num,                NodeType.TupleItem,                  undefined,     false ]],
-  ['.oldTuple[*]',        ['#/properties/oldTuple/additionalItems',      bool,               NodeType.ArrayItems,                 undefined,     false ]],
-  ['.oldTupleNoExtra',    ['#/properties/oldTupleNoExtra',               ks.oldTupleNoExtra, NodeType.ObjectProperty,             undefined,     true  ]],
-  ['.oldTupleNoExtra[0]', ['#/properties/oldTupleNoExtra/items/0',       str,                NodeType.TupleItem,                  undefined,     false ]],
-  ['.newTuple',           ['#/properties/newTuple',                      ks.newTuple,        NodeType.ObjectProperty,             undefined,     true  ]],
-  ['.newTuple[0]',        ['#/properties/newTuple/prefixItems/0',        str,                NodeType.TupleItem,                  undefined,     false ]],
-  ['.newTuple[1]',        ['#/properties/newTuple/prefixItems/1',        num,                NodeType.TupleItem,                  undefined,     false ]],
-  ['.newTuple[*]',        ['#/properties/newTuple/items',                bool,               NodeType.ArrayItems,                 undefined,     false ]],
-  ['.newTupleNoExtra',    ['#/properties/newTupleNoExtra',               ks.newTupleNoExtra, NodeType.ObjectProperty,             undefined,     true  ]],
-  ['.newTupleNoExtra[0]', ['#/properties/newTupleNoExtra/prefixItems/0', str,                NodeType.TupleItem,                  undefined,     false ]],
+  ['.str',                [/*'#/properties/str',                            */ NodeType.ObjectProperty,             str,                undefined    , 'str'                 , 'properties'           ]],
+  ['.num',                [/*'#/properties/num',                            */ NodeType.ObjectProperty,             num,                undefined    , 'num'                 , 'properties'           ]],
+  ['./^_pat.*/',          [/*'#/patternProperties/^_pat.*',                 */ NodeType.ObjectPatternProperties,    str,                undefined    , '^_pat.*'             , 'patternProperties'    ]],
+  ['./foo/bar/',          [/*'#/patternProperties/foo~1bar',                */ NodeType.ObjectPatternProperties,    str,                undefined    , 'foo/bar'             , 'patternProperties'    ]],
+  ['.*',                  [/*'#/additionalProperties',                      */ NodeType.ObjectAdditionalProperties, num,                undefined    , undefined             , 'additionalProperties' ]],
+  ['.refStr',             [/*'#/properties/refStr',                         */ NodeType.ObjectProperty,             $defs.foo,          '#/$defs/foo', 'refStr'              , 'properties'           ]],
+  ['.refObj',             [/*'#/properties/refObj',                         */ NodeType.ObjectProperty,             $defs.bar,          '#/$defs/bar', 'refObj'              , 'properties'           ]],
+  ['.foo/bar~baz',        [/*'#/properties/foo~1bar~0baz',                  */ NodeType.ObjectProperty,             str,                undefined    , 'foo/bar~baz'         , 'properties'           ]],
+  ['.child',              [/*'#/properties/child',                          */ NodeType.ObjectProperty,             ks.child,           undefined    , 'child'               , 'properties'           ]],
+  ['.child.str',          [/*'#/properties/child/properties/str',           */ NodeType.ObjectProperty,             str,                undefined    , 'str'                 , 'properties'           ]],
+  ['.child.num',          [/*'#/properties/child/properties/num',           */ NodeType.ObjectProperty,             num,                undefined    , 'num'                 , 'properties'           ]],
+  ['.notTuple',           [/*'#/properties/notTuple',                       */ NodeType.ObjectProperty,             ks.notTuple,        undefined    , 'notTuple'            , 'properties'           ]],
+  ['.notTuple[*]',        [/*'#/properties/notTuple/items',                 */ NodeType.ArrayItems,                 str,                undefined    , undefined             , 'items'                ]],
+  ['.oldTuple',           [/*'#/properties/oldTuple',                       */ NodeType.ObjectProperty,             ks.oldTuple,        undefined    , 'oldTuple'            , 'properties'           ]],
+  ['.oldTuple[0]',        [/*'#/properties/oldTuple/items/0',               */ NodeType.TupleItem,                  str,                undefined    , '0'                   , 'items'                ]],
+  ['.oldTuple[1]',        [/*'#/properties/oldTuple/items/1',               */ NodeType.TupleItem,                  num,                undefined    , '1'                   , 'items'                ]],
+  ['.oldTuple[*]',        [/*'#/properties/oldTuple/additionalItems',       */ NodeType.ArrayItems,                 bool,               undefined    , undefined             , 'additionalItems'      ]],
+  ['.oldTupleNoExtra',    [/*'#/properties/oldTupleNoExtra',                */ NodeType.ObjectProperty,             ks.oldTupleNoExtra, undefined    , 'oldTupleNoExtra'     , 'properties'           ]],
+  ['.oldTupleNoExtra[0]', [/*'#/properties/oldTupleNoExtra/items/0',        */ NodeType.TupleItem,                  str,                undefined    , '0'                   , 'items'                ]],
+  ['.newTuple',           [/*'#/properties/newTuple',                       */ NodeType.ObjectProperty,             ks.newTuple,        undefined    , 'newTuple'            , 'properties'           ]],
+  ['.newTuple[0]',        [/*'#/properties/newTuple/prefixItems/0',         */ NodeType.TupleItem,                  str,                undefined    , '0'                   , 'prefixItems'          ]],
+  ['.newTuple[1]',        [/*'#/properties/newTuple/prefixItems/1',         */ NodeType.TupleItem,                  num,                undefined    , '1'                   , 'prefixItems'          ]],
+  ['.newTuple[*]',        [/*'#/properties/newTuple/items',                 */ NodeType.ArrayItems,                 bool,               undefined    , undefined             , 'items'                ]],
+  ['.newTupleNoExtra',    [/*'#/properties/newTupleNoExtra',                */ NodeType.ObjectProperty,             ks.newTupleNoExtra, undefined    , 'newTupleNoExtra'     , 'properties'           ]],
+  ['.newTupleNoExtra[0]', [/*'#/properties/newTupleNoExtra/prefixItems/0',  */ NodeType.TupleItem,                  str,                undefined    , '0'                   , 'prefixItems'          ]],
 ]);
