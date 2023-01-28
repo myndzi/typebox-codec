@@ -4,7 +4,7 @@ export default {};
 
 import { expect } from '@jest/globals';
 import { defaultLookupFn, Node, NodeType, SchemaReader } from './schemareader';
-import { dataPathBuilder } from './util';
+import { dataPathBuilder, ownProperties } from './util';
 
 expect.extend({
   toBeCorrectSchema: (actual, expected, path) =>
@@ -435,6 +435,81 @@ describe('SchemaReader', () => {
         i++;
       });
       expect(i).toBe(exps.length);
+    });
+  });
+
+  describe('traverseDefs', () => {
+    it.each(['$defs', 'definitions'])('visits %s', key => {
+      const schema = {
+        [key]: {
+          foo: { type: 'string' },
+          bar: { type: 'object', properties: { baz: { type: 'string' } } },
+        },
+      };
+
+      const schemaVal = schema[key];
+      if (!schemaVal) throw new Error('wat');
+
+      const t = new SchemaReader(schema);
+
+      // prettier-ignore
+      const unresolved: Map<string, expectation> = new Map([
+        ['.foo',     [/*`#/${key}/foo`,                */ NodeType.DefProperty,    schemaVal.foo,                undefined, 'foo', key          ]],
+        ['.bar',     [/*`#/${key}/bar`,                */ NodeType.DefProperty,    schemaVal.bar,                undefined, 'bar', key          ]],
+        ['.bar.baz', [/*`#/${key}/bar/properties/baz`, */ NodeType.ObjectProperty, schemaVal.bar.properties.baz, undefined, 'baz', 'properties' ]],
+      ]);
+
+      let paths: string[] = [];
+      t.traverseDefs((schema, nodeType, propKey?, key?) => {
+        const $ref = ownProperties(schema, '$ref');
+
+        paths.length = t.depth();
+        const dataPath = dataPathBuilder(nodeType, paths[paths.length - 1] ?? '', key);
+        paths.push(dataPath);
+
+        const exp = unresolved.get(dataPath);
+        if (!exp) {
+          throw new Error(`visit encountered an unexpected path: ${dataPath}`);
+        }
+
+        expect(NodeType[nodeType]).toBe(NodeType[exp[0]]);
+        expect(schema).toBeCorrectSchema(exp[1], dataPath);
+        expect($ref).toBe(exp[2]);
+        expect(key).toBe(exp[3]);
+        expect(propKey).toBe(exp[4]);
+
+        unresolved.delete(dataPath);
+      });
+      expect([...unresolved.keys()]).toEqual([]);
+    });
+  });
+
+  describe('traverseSchema', () => {
+    it('handles object properties', () => {
+      const t = new SchemaReader(kitchenSink);
+      const unresolved = new Map(ksExpectations);
+      let paths: string[] = [''];
+      t.traverseSchema((schema, nodeType, propKey?, key?) => {
+        const $ref = ownProperties(schema, '$ref');
+
+        paths.length = t.depth();
+        const dataPath = dataPathBuilder(nodeType, paths[paths.length - 1] ?? '', key);
+        paths.push(dataPath);
+
+        const exp = unresolved.get(dataPath);
+        if (!exp) {
+          throw new Error(`visit encountered an unexpected path: ${dataPath}`);
+        }
+
+        expect(NodeType[nodeType]).toBe(NodeType[exp[0]]);
+        expect(schema).toBeCorrectSchema(exp[1], dataPath);
+        expect($ref).toBe(exp[2]);
+        expect(key).toBe(exp[3]);
+        expect(propKey).toBe(exp[4]);
+
+        unresolved.delete(dataPath);
+      });
+      expect([...unresolved.keys()]).toEqual([]);
     });
   });
 });

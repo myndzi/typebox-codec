@@ -1,6 +1,6 @@
 import { Kind, TSchema } from '@sinclair/typebox';
+import { AtLeastOne, isArray, isObject } from './annotations';
 import { Transformer, TransformFn } from './transformer';
-import { AtLeastOne, isArray, isObject } from './util';
 
 // Codec handles concurrent traversal of a schema and a value in the context
 // of a given Transformer. It can also be configured to fall back to a parent
@@ -11,24 +11,16 @@ export class Codec {
   // so we use nominal typing to prevent one from matching the other...
   private readonly __brand?: 'codec';
 
-  protected transformFns: Map<Transformer, Map<TSchema, TransformFn<any>>> =
-    new Map();
+  protected transformFns: Map<Transformer, Map<TSchema, TransformFn<any>>> = new Map();
   protected transformers: Set<Transformer> = new Set();
   protected parentCodec: Codec | undefined;
 
   constructor(name: string, ...transformers: AtLeastOne<Transformer>);
   constructor(name: string, parentCodec: Codec);
-  constructor(
-    name: string,
-    parentCodec: Codec,
-    ...transformers: AtLeastOne<Transformer>
-  );
+  constructor(name: string, parentCodec: Codec, ...transformers: AtLeastOne<Transformer>);
   constructor(
     public readonly name: string,
-    ...args:
-      | [Codec]
-      | AtLeastOne<Transformer>
-      | [Codec, ...AtLeastOne<Transformer>]
+    ...args: [Codec] | AtLeastOne<Transformer> | [Codec, ...AtLeastOne<Transformer>]
   ) {
     for (const arg of args) {
       if (arg instanceof Codec) this.parentCodec = arg;
@@ -43,11 +35,7 @@ export class Codec {
     }
   }
 
-  AddTransformation<T extends TSchema, U extends TransformFn<T>>(
-    transformer: Transformer,
-    schema: T,
-    fn: U,
-  ) {
+  AddTransformation<T extends TSchema, U extends TransformFn<T>>(transformer: Transformer, schema: T, fn: U) {
     const fns = this.transformFns.get(transformer) ?? new Map();
     fns.set(schema, fn);
     this.transformFns.set(transformer, fns);
@@ -65,18 +53,14 @@ export class Codec {
       );
     }
 
-    const newRefs =
-      schema.$id === undefined ? references : [schema, ...references];
+    const newRefs = schema.$id === undefined ? references : [schema, ...references];
 
     switch (schema[Kind]) {
       // dereference schema, call again
       case 'Ref':
       case 'Self':
-        const reference = references.find(
-          reference => reference.$id === schema['$ref'],
-        );
-        if (reference === undefined)
-          throw new Error(`Cannot find schema with $id '${schema['$ref']}'.`);
+        const reference = references.find(reference => reference.$id === schema['$ref']);
+        if (reference === undefined) throw new Error(`Cannot find schema with $id '${schema['$ref']}'.`);
         return this.Transform(transformer, reference, value, newRefs);
 
       // map items
@@ -95,15 +79,7 @@ export class Codec {
           Object.entries(value).map(([pKey, pVal]) =>
             schema['properties'][pKey] === undefined
               ? [pKey, pVal] // keep unknown properties; TODO: optionally discard?
-              : [
-                  pKey,
-                  this.Transform(
-                    transformer,
-                    schema['properties'][pKey],
-                    pVal,
-                    newRefs,
-                  ),
-                ],
+              : [pKey, this.Transform(transformer, schema['properties'][pKey], pVal, newRefs)],
           ),
         );
 
@@ -121,12 +97,7 @@ export class Codec {
         // certain schema elements don't vary by codec but still
         // need processing. call out to that if present
         if (this.parentCodec) {
-          return this.parentCodec.Transform(
-            transformer,
-            schema,
-            value,
-            references,
-          );
+          return this.parentCodec.Transform(transformer, schema, value, references);
         }
 
         // all mapping functions are optional, just return the value

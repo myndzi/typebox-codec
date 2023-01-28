@@ -1,12 +1,11 @@
 import { TSchema, Type } from '@sinclair/typebox';
+import { Apply, Transform } from './annotations';
 import { Codec } from './codec';
 import { AnyToStatic, StaticToAny, Transformer } from './transformer';
-import { Visitor } from './visitor';
-import { Apply, isObject, Transform } from './util';
 
 export { Codec } from './codec';
 export { Transformer } from './transformer';
-export { Apply, Transform } from './util';
+export { Apply, Transform } from './annotations';
 
 const XEncode = new Transformer('Encode');
 const XDecode = new Transformer('Decode');
@@ -57,10 +56,11 @@ enum Foo {
 const $defs = {
   test: Type.String({ $id: '#/$defs/test' }),
 };
+
 const testSchema = Type.Object(
   {
     ts: Apply(
-      Type.Date(),
+      Type.Date({ description: `it's the timestamp, bruh` }),
       encode((v: Date) => v.toISOString()),
       decode(v => new Date(v)),
     ),

@@ -352,4 +352,23 @@ export class SchemaReader {
       cb(schema, data, this.path);
     }
   }
+
+  traverseSchema(cb: (...[schema, nodeType, propKey, key]: Node) => void, node: Node | undefined = undefined): void {
+    if (node !== undefined) cb(...node);
+    this.each<NodeType.ObjectProperty>(node => this.traverseSchema(cb, node), NodeType.ObjectProperty);
+    this.each<NodeType.ObjectPatternProperties>(
+      node => this.traverseSchema(cb, node),
+      NodeType.ObjectPatternProperties,
+    );
+    this.try<NodeType.ObjectAdditionalProperties>(
+      node => this.traverseSchema(cb, node),
+      NodeType.ObjectAdditionalProperties,
+    );
+    this.each<NodeType.TupleItem>(node => this.traverseSchema(cb, node), NodeType.TupleItem);
+    this.try<NodeType.ArrayItems>(node => this.traverseSchema(cb, node), NodeType.ArrayItems);
+  }
+
+  traverseDefs(cb: (...[schema, nodeType, propKey, key]: Node) => void): void {
+    this.each<NodeType.DefProperty>(node => this.traverseSchema(cb, node), NodeType.DefProperty);
+  }
 }

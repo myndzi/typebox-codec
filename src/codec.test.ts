@@ -1,7 +1,7 @@
 import { Type } from '@sinclair/typebox';
 import { Codec } from './codec';
 import { Transformer } from './transformer';
-import { Apply, Transform } from './util';
+import { Apply, Transform } from './annotations';
 
 describe('Codec', () => {
   describe('#Transform (value)', () => {
