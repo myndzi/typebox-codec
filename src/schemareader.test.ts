@@ -460,7 +460,11 @@ describe('SchemaReader', () => {
       ]);
 
       let paths: string[] = [];
-      t.traverseDefs((schema, nodeType, propKey?, key?) => {
+      t.traverseDefs(path => {
+        const lastPath = path[path.length - 1];
+        if (lastPath === undefined) return;
+        const [schema, nodeType, propKey, key] = lastPath;
+
         const $ref = ownProperties(schema, '$ref');
 
         paths.length = t.depth();
@@ -489,7 +493,11 @@ describe('SchemaReader', () => {
       const t = new SchemaReader(kitchenSink);
       const unresolved = new Map(ksExpectations);
       let paths: string[] = [''];
-      t.traverseSchema((schema, nodeType, propKey?, key?) => {
+      t.traverseSchema(path => {
+        const lastPath = path[path.length - 1];
+        if (lastPath === undefined) return;
+        const [schema, nodeType, propKey, key] = lastPath;
+
         const $ref = ownProperties(schema, '$ref');
 
         paths.length = t.depth();

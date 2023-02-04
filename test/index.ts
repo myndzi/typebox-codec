@@ -1,7 +1,7 @@
 import { Type } from '@sinclair/typebox';
 import moment from 'moment';
-import { Apply2, Codec2, Decode2, Encode2 } from '../src/codec2';
-import { SchemaReader } from '../src/schemareader';
+import { Apply, Codec, Decode2, Encode } from '../src/codec';
+import { NodeType, SchemaReader } from '../src/schemareader';
 
 export default 0;
 
@@ -34,20 +34,23 @@ const paramEnum = (_enum: any) => ({
   decode: (v: string) => _enum[v],
 });
 
-const File = Codec2.create().add('enum', paramEnum);
+const File = Codec.create().add('enum', paramEnum);
 
-const Env = Codec2.create().add('epoch', momentCodec('x')).add('YMD', momentCodec('YYYY-MM-DD')).add('enum', paramEnum);
-const Screen = Codec2.create().add('redact', { encode: (v: any) => '[redacted]', decode: () => undefined });
+const Env = Codec.create().add('epoch', momentCodec('x')).add('YMD', momentCodec('YYYY-MM-DD')).add('enum', paramEnum);
+const Screen = Codec.create().add('redact', { encode: (v: any) => '[redacted]', decode: () => undefined });
 const Redact = Screen.use('redact');
 
-const testSchema = Type.Object({
-  ts: Apply2(Type.Date(), Env.use('epoch')),
-  foo: Apply2(Type.Enum(Foo), Env.use('enum', Foo)),
-  password: Apply2(Type.Optional(Type.String()), Redact),
-  tuple: Type.Tuple([Apply2(Type.Date(), Env.use('YMD'))]),
-});
+const testSchema = Type.Object(
+  {
+    ts: Apply(Type.Date({ description: 'A timestamp' }), Env.use('epoch')),
+    foo: Apply(Type.Enum(Foo), Env.use('enum', Foo)),
+    password: Apply(Type.Optional(Type.String()), Redact),
+    tuple: Type.Tuple([Apply(Type.Date({ description: 'A date' }), Env.use('YMD'))]),
+  },
+  { description: 'A test schema' },
+);
 
-const encoded = Encode2(
+const encoded = Encode(
   testSchema,
   {
     ts: new Date(),
@@ -62,6 +65,34 @@ console.log(encoded);
 
 const decoded = Decode2(testSchema, encoded, Screen, Env);
 console.log(decoded);
+
+const sr = new SchemaReader(testSchema);
+sr.traverseSchema(path => {
+  const pathString = path.reduce((acc, node) => {
+    const [schema, nodeType, parentKey, key] = node;
+    switch (nodeType) {
+      case NodeType.Root:
+        return acc;
+      case NodeType.DefProperty:
+        return `$${key}`;
+      case NodeType.ObjectProperty:
+        return `${acc}.${key}`;
+      case NodeType.ObjectPatternProperties:
+        return `${acc}./${key}`;
+      case NodeType.ObjectAdditionalProperties:
+        return `${acc}.*`;
+      case NodeType.ArrayItems:
+        return `${acc}[*]`;
+      case NodeType.TupleItem:
+        return `${acc}[${key}]`;
+    }
+  }, '');
+  const node = path[path.length - 1];
+
+  if (node && Object.prototype.hasOwnProperty.call(node[0], 'description')) {
+    console.log(`${pathString}: ${(node[0] as any).description}`);
+  }
+});
 
 // let decoded = CEpoch.Transform(Decode, testSchema, {
 //   ts: 1673870703793,

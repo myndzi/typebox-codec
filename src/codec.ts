@@ -1,108 +1,109 @@
-import { Kind, TSchema } from '@sinclair/typebox';
-import { AtLeastOne, isArray, isObject } from './annotations';
-import { Transformer, TransformFn } from './transformer';
+import { SchemaReader } from './schemareader';
 
-// Codec handles concurrent traversal of a schema and a value in the context
-// of a given Transformer. It can also be configured to fall back to a parent
-// Codec, and will call out to that parent if it doesn't already know about
-// a function for a specific schema / Transformer pair
-export class Codec {
-  // Codec's constructor type needs to distinguish between Codecs and Transformers,
-  // so we use nominal typing to prevent one from matching the other...
-  private readonly __brand?: 'codec';
+export type Transform<From, To> = (v: From) => To;
+export type CodecAddFn = (subschema: unknown) => void;
 
-  protected transformFns: Map<Transformer, Map<TSchema, TransformFn<any>>> = new Map();
-  protected transformers: Set<Transformer> = new Set();
-  protected parentCodec: Codec | undefined;
+type StringLiteral<T> = T extends string ? (string extends T ? never : T) : never;
 
-  constructor(name: string, ...transformers: AtLeastOne<Transformer>);
-  constructor(name: string, parentCodec: Codec);
-  constructor(name: string, parentCodec: Codec, ...transformers: AtLeastOne<Transformer>);
-  constructor(
-    public readonly name: string,
-    ...args: [Codec] | AtLeastOne<Transformer> | [Codec, ...AtLeastOne<Transformer>]
+type CodecFns<Encoded extends any, Decoded extends any> = {
+  encode: (decoded: Decoded) => Encoded | undefined;
+  decode: (encoded: Encoded) => Decoded | undefined;
+};
+
+type Lazy<CF extends CodecFns<any, any>, A extends any[]> = (...args: A) => CF;
+type LazyKeys<T extends {}> = keyof { [K in keyof T]: T[K] extends Lazy<any, any> ? T[K] : never };
+type LazyArgs<T extends (...args: any) => CodecFns<any, any>> = T extends (...args: infer P) => CodecFns<any, any>
+  ? P
+  : never;
+// & unknown forces typescript to avoid reporting the type as Simplify<input>
+type Simplify<T> = { [KeyType in keyof T]: T[KeyType] } & unknown;
+type Extend<T extends {}, K extends string, NT extends any> = Simplify<T & { [NK in K]: NT }>;
+
+export class Codec<T extends { [K in keyof T]: K extends string ? T[K] : never }> {
+  private mappings = new Map<unknown, CodecFns<any, any>>();
+  private codecs: T;
+
+  private constructor(codecs: T) {
+    this.codecs = codecs;
+  }
+
+  static create() {
+    return new Codec({});
+  }
+
+  add<Kind extends string, Encoded extends any, Decoded extends any, Args extends any[]>(
+    kind: Exclude<StringLiteral<Kind>, keyof T>,
+    codec: Lazy<CodecFns<Encoded, Decoded>, Args>,
+  ): Codec<Extend<T, Kind, Lazy<CodecFns<Encoded, Decoded>, Args>>>;
+  add<Kind extends string, Encoded extends any, Decoded extends any>(
+    kind: Exclude<StringLiteral<Kind>, keyof T>,
+    codec: CodecFns<Encoded, Decoded>,
+  ): Codec<Extend<T, Kind, CodecFns<Encoded, Decoded>>>;
+  add<Kind extends string, Encoded extends any, Decoded extends any, Args extends any[]>(
+    kind: Exclude<StringLiteral<Kind>, keyof T>,
+    codec: CodecFns<Encoded, Decoded> | Lazy<CodecFns<Encoded, Decoded>, Args>,
   ) {
-    for (const arg of args) {
-      if (arg instanceof Codec) this.parentCodec = arg;
-      else this.transformers.add(arg);
-    }
-
-    // support the same transformers as defined by the parent
-    if (this.parentCodec) {
-      for (const transformer of this.parentCodec.transformers.values()) {
-        this.transformers.add(transformer);
-      }
-    }
+    return new Codec<Extend<T, Kind, typeof codec>>({
+      ...this.codecs,
+      [kind]: codec,
+    } as Extend<T, Kind, typeof codec>);
   }
 
-  AddTransformation<T extends TSchema, U extends TransformFn<T>>(transformer: Transformer, schema: T, fn: U) {
-    const fns = this.transformFns.get(transformer) ?? new Map();
-    fns.set(schema, fn);
-    this.transformFns.set(transformer, fns);
+  use<Kind extends LazyKeys<T>, A extends LazyArgs<T[Kind]>>(kind: Kind, ...args: A): CodecAddFn;
+  use<Kind extends Exclude<keyof T, LazyKeys<T>>>(kind: Kind): CodecAddFn;
+  use<Kind extends keyof T, A extends LazyArgs<T[Kind]>>(kind: StringLiteral<Kind>, ...args: A): CodecAddFn {
+    const codec = this.codecs[kind] as T[Kind];
+    if (codec === undefined) throw new Error(`kind ${kind} is not registered`);
+    const res: CodecFns<any, any> = typeof codec === 'function' ? codec.apply(null, args) : codec;
+    return (subschema: unknown) => this.addMapping(subschema, res);
   }
 
-  Transform<T extends TSchema>(
-    transformer: Transformer,
-    schema: T,
-    value: unknown,
-    references: TSchema[] = [],
-  ): unknown {
-    if (!this.transformers.has(transformer)) {
-      throw new Error(
-        `Cannot find the transformer '${transformer.name}'. Be sure to include it in the Codec's constructor.`,
-      );
-    }
+  private addMapping(subschema: unknown, codec: CodecFns<any, any>): void {
+    this.mappings.set(subschema, codec);
+  }
 
-    const newRefs = schema.$id === undefined ? references : [schema, ...references];
+  encode(subschema: unknown, data: unknown): unknown {
+    const fns = this.mappings.get(subschema);
+    if (fns === undefined) return data;
+    return typeof fns.encode === 'function' ? fns.encode(data) : data;
+  }
 
-    switch (schema[Kind]) {
-      // dereference schema, call again
-      case 'Ref':
-      case 'Self':
-        const reference = references.find(reference => reference.$id === schema['$ref']);
-        if (reference === undefined) throw new Error(`Cannot find schema with $id '${schema['$ref']}'.`);
-        return this.Transform(transformer, reference, value, newRefs);
-
-      // map items
-      case 'Array':
-      case 'Tuple':
-        if (!isArray(value)) throw new Error('Value is not an array');
-        return value.map((iVal, iKey) => {
-          return this.Transform(transformer, schema['items'], iVal, newRefs);
-        });
-
-      // map properties
-      case 'Object':
-      case 'Record':
-        if (!isObject(value)) throw new Error('Value is not an object');
-        return Object.fromEntries(
-          Object.entries(value).map(([pKey, pVal]) =>
-            schema['properties'][pKey] === undefined
-              ? [pKey, pVal] // keep unknown properties; TODO: optionally discard?
-              : [pKey, this.Transform(transformer, schema['properties'][pKey], pVal, newRefs)],
-          ),
-        );
-
-      // map values
-      default:
-        const transformFn = this.transformFns.get(transformer)?.get(schema);
-
-        // this codec directly has an assigned mapping function for
-        // this schema element
-        if (transformFn) {
-          return transformFn(value);
-        }
-
-        // Codecs optionally have a parent codec, for example when
-        // certain schema elements don't vary by codec but still
-        // need processing. call out to that if present
-        if (this.parentCodec) {
-          return this.parentCodec.Transform(transformer, schema, value, references);
-        }
-
-        // all mapping functions are optional, just return the value
-        // as-is if we don't want to do anything with it
-        return value;
-    }
+  decode(subschema: unknown, data: unknown): unknown {
+    const fns = this.mappings.get(subschema);
+    if (fns === undefined) return data;
+    return typeof fns.decode === 'function' ? fns.decode(data) : data;
   }
 }
+
+export const Apply = <T extends any>(subschema: T, ...codecAddFns: CodecAddFn[]): T => {
+  for (const addFn of codecAddFns) {
+    addFn(subschema);
+  }
+  return subschema;
+};
+
+export const Encode = (schema: any, inputData: any, ...codecs: Codec<any>[]): any => {
+  const sr = new SchemaReader(schema);
+  return sr.map(inputData, (value, ...subschemas: any[]) => {
+    let mapped: any = value;
+    for (const codec of codecs) {
+      for (const subschema of subschemas) {
+        mapped = codec.encode(subschema, mapped);
+      }
+    }
+    return mapped;
+  });
+};
+
+export const Decode2 = (schema: any, inputData: any, ...codecs: Codec<any>[]): any => {
+  const sr = new SchemaReader(schema);
+  return sr.map(inputData, (value, ...subschemas: any[]) => {
+    let mapped: any = value;
+    for (const codec of codecs) {
+      for (const subschema of subschemas) {
+        mapped = codec.decode(subschema, mapped);
+      }
+    }
+    return mapped;
+  });
+};

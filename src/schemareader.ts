@@ -417,22 +417,27 @@ export class SchemaReader {
     }
   }
 
-  traverseSchema(cb: (...[schema, nodeType, propKey, key]: Node) => void, node: Node | undefined = undefined): void {
-    if (node !== undefined) cb(...node);
-    this.each<NodeType.ObjectProperty>(node => this.traverseSchema(cb, node), NodeType.ObjectProperty);
+  traverseSchema(cb: (path: Node[]) => void, node: Node | undefined = undefined, path: Node[] = []): void {
+    const thisNode: Node = node ?? [this.root, NodeType.Root];
+    const newPath = path.concat([thisNode]);
+    cb(newPath);
+
+    this.each<NodeType.ObjectProperty>(node => this.traverseSchema(cb, node, newPath), NodeType.ObjectProperty);
     this.each<NodeType.ObjectPatternProperties>(
-      node => this.traverseSchema(cb, node),
+      node => this.traverseSchema(cb, node, newPath),
       NodeType.ObjectPatternProperties,
     );
     this.try<NodeType.ObjectAdditionalProperties>(
-      node => this.traverseSchema(cb, node),
+      node => this.traverseSchema(cb, node, newPath),
       NodeType.ObjectAdditionalProperties,
     );
-    this.each<NodeType.TupleItem>(node => this.traverseSchema(cb, node), NodeType.TupleItem);
-    this.try<NodeType.ArrayItems>(node => this.traverseSchema(cb, node), NodeType.ArrayItems);
+    this.each<NodeType.TupleItem>(node => this.traverseSchema(cb, node, newPath), NodeType.TupleItem);
+    this.try<NodeType.ArrayItems>(node => this.traverseSchema(cb, node, newPath), NodeType.ArrayItems);
   }
 
-  traverseDefs(cb: (...[schema, nodeType, propKey, key]: Node) => void): void {
-    this.each<NodeType.DefProperty>(node => this.traverseSchema(cb, node), NodeType.DefProperty);
+  traverseDefs(cb: (path: Node[]) => void): void {
+    const root: Node = [this.root, NodeType.Root];
+
+    this.each<NodeType.DefProperty>(node => this.traverseSchema(cb, node, [root]), NodeType.DefProperty);
   }
 }

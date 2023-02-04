@@ -42,6 +42,7 @@ const $defs = kitchenSink.$defs as any;
 export type expectation = [NodeType, any, string | undefined, string | undefined, string | undefined];
 // prettier-ignore
 export const ksExpectations: Map<string, expectation> = new Map([
+  ['',                    [/*'#',                                           */ NodeType.Root,                       kitchenSink,        undefined    , undefined             , undefined              ]],
   ['.str',                [/*'#/properties/str',                            */ NodeType.ObjectProperty,             str,                undefined    , 'str'                 , 'properties'           ]],
   ['.num',                [/*'#/properties/num',                            */ NodeType.ObjectProperty,             num,                undefined    , 'num'                 , 'properties'           ]],
   ['./^_pat.*/',          [/*'#/patternProperties/^_pat.*',                 */ NodeType.ObjectPatternProperties,    str,                undefined    , '^_pat.*'             , 'patternProperties'    ]],
