@@ -1,6 +1,5 @@
 import isPlainObject from 'lodash.isplainobject';
 import * as URI from 'uri-js';
-import { isObjectLike } from './util';
 
 import { ownProperties, unescapeJsonPointer } from './util';
 
@@ -96,16 +95,16 @@ export const defaultLookupFn: SchemaLookupFn = <T extends NodeType>(
     switch (nodeType) {
       case NodeType.ObjectProperty:
         subschema = ownProperties(schema, 'properties');
-        if (isObjectLike(subschema)) {
-          for (const key of Object.keys(subschema)) {
+        if (isPlainObject(subschema)) {
+          for (const key of Object.keys(subschema as object)) {
             Array.prototype.push.apply(ret, defaultLookupFn(schema, nodeType, key));
           }
         }
         break;
       case NodeType.ObjectPatternProperties:
         subschema = ownProperties(schema, 'patternProperties');
-        if (isObjectLike(subschema)) {
-          for (const key of Object.keys(subschema)) {
+        if (isPlainObject(subschema)) {
+          for (const key of Object.keys(subschema as object)) {
             Array.prototype.push.apply(ret, defaultLookupFn(schema, nodeType, key));
           }
         }
@@ -117,8 +116,8 @@ export const defaultLookupFn: SchemaLookupFn = <T extends NodeType>(
           defKey = 'definitions';
           subschema = ownProperties(schema, defKey);
         }
-        if (isObjectLike(subschema)) {
-          for (const key of Object.keys(subschema)) {
+        if (isPlainObject(subschema)) {
+          for (const key of Object.keys(subschema as object)) {
             Array.prototype.push.apply(ret, defaultLookupFn(schema, nodeType, key));
           }
         }
@@ -307,7 +306,18 @@ export class SchemaReader {
     const $ref = ownProperties(_schema, '$ref');
     const schema = typeof $ref === 'string' ? this.dereference($ref) : _schema;
 
-    if (data && typeof data === 'object' && !Array.isArray(data)) {
+    if (Array.isArray(data)) {
+      for (let i = 0; i < data.length; i++) {
+        let matched = this.try<NodeType.TupleItem>(
+          node => this.traverse(data[i], cb, node[0]),
+          NodeType.TupleItem,
+          i,
+          schema,
+        );
+        if (matched === 0)
+          this.try<NodeType.ArrayItems>(node => this.traverse(data[i], cb, node[0]), NodeType.ArrayItems, schema);
+      }
+    } else if (isPlainObject(data)) {
       for (const key of Object.keys(data)) {
         let matched = this.try<NodeType.ObjectProperty>(
           node => this.traverse(data[key], cb, node[0]),
@@ -337,19 +347,73 @@ export class SchemaReader {
             schema,
           );
       }
-    } else if (Array.isArray(data)) {
-      for (let i = 0; i < data.length; i++) {
-        let matched = this.try<NodeType.TupleItem>(
-          node => this.traverse(data[i], cb, node[0]),
-          NodeType.TupleItem,
-          i,
-          schema,
-        );
-        if (matched === 0)
-          this.try<NodeType.ArrayItems>(node => this.traverse(data[i], cb, node[0]), NodeType.ArrayItems, schema);
-      }
     } else {
       cb(schema, data, this.path);
+    }
+  }
+
+  map(data: any, cb: (data: unknown, subschema: unknown) => unknown, _schema: any = this.root): any {
+    const $ref = ownProperties(_schema, '$ref');
+    const schema = typeof $ref === 'string' ? this.dereference($ref) : _schema;
+
+    if (Array.isArray(data)) {
+      const newArr: any[] = [];
+
+      for (let i = 0; i < data.length; i++) {
+        const subschemas: unknown[] = [];
+
+        let matched = this.try<NodeType.TupleItem>(node => subschemas.push(node[0]), NodeType.TupleItem, i, schema);
+        if (matched === 0) {
+          this.try<NodeType.ArrayItems>(node => subschemas.push(node[0]), NodeType.ArrayItems, schema);
+        }
+
+        let mapped = data[i];
+        for (const subschema of subschemas) {
+          mapped = this.map(mapped, cb, subschema);
+        }
+        newArr[i] = mapped;
+      }
+
+      return newArr;
+    } else if (isPlainObject(data)) {
+      const newObj: any = {};
+
+      for (const key of Object.keys(data)) {
+        let subschemas: unknown[] = [];
+
+        this.try<NodeType.ObjectProperty>(node => subschemas.push(node[0]), NodeType.ObjectProperty, key, schema);
+
+        // also call for each matching item in patternProperties
+        this.each<NodeType.ObjectPatternProperties>(
+          ([subschema, _1, _2, patternKey]) => {
+            const re = new RegExp(patternKey);
+            if (!re.test(key)) return;
+
+            subschemas.push(subschema);
+          },
+          NodeType.ObjectPatternProperties,
+          schema,
+        );
+
+        if (subschemas.length === 0) {
+          this.try<NodeType.ObjectAdditionalProperties>(
+            node => subschemas.push(node[0]),
+            NodeType.ObjectAdditionalProperties,
+            key,
+            schema,
+          );
+        }
+
+        let mapped = data[key];
+        for (const subschema of subschemas) {
+          mapped = this.map(mapped, cb, subschema);
+        }
+        newObj[key] = mapped;
+      }
+
+      return newObj;
+    } else {
+      return cb(data, schema);
     }
   }
 

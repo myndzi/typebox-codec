@@ -41,5 +41,3 @@ export const dataPathBuilder: PathBuilder = (nodeType, parentPath, currentKey) =
       return '';
   }
 };
-
-export const isObjectLike = (v: unknown): v is object => typeof v === 'object' && v != null && !Array.isArray(v);
