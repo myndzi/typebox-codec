@@ -1,6 +1,6 @@
 import { Type } from '@sinclair/typebox';
 import moment from 'moment';
-import { Apply, Codec, Decode2, Encode } from '../src/codec';
+import { Apply, Codec, Decode, Encode } from '../src/codec';
 import { NodeType, SchemaReader } from '../src/schemareader';
 
 export default 0;
@@ -63,7 +63,7 @@ const encoded = Encode(
 );
 console.log(encoded);
 
-const decoded = Decode2(testSchema, encoded, Screen, Env);
+const decoded = Decode(testSchema, encoded, Screen, Env);
 console.log(decoded);
 
 const sr = new SchemaReader(testSchema);
