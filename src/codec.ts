@@ -95,7 +95,7 @@ export const Encode = (schema: any, inputData: any, ...codecs: Codec<any>[]): an
   });
 };
 
-export const Decode2 = (schema: any, inputData: any, ...codecs: Codec<any>[]): any => {
+export const Decode = (schema: any, inputData: any, ...codecs: Codec<any>[]): any => {
   const sr = new SchemaReader(schema);
   return sr.map(inputData, (value, ...subschemas: any[]) => {
     let mapped: any = value;
